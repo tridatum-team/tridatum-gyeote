@@ -55,3 +55,27 @@
 @media (prefers-reduced-motion:reduce) { .pending-dots i { animation:none; } }
 
 #access-input { width:100%; border:1px solid var(--line); border-radius:14px; padding:14px; font-size:18px; background:var(--surface); margin-bottom:12px; color:var(--ink); }
+
+/* ── 가족방 ── */
+.family-actions { display:flex; gap:8px; margin-top:10px; }
+.family-actions button { flex:1; display:flex; align-items:center; justify-content:center; gap:7px; border:1px solid var(--line); border-radius:14px; background:var(--surface); padding:12px 8px; font-size:13px; color:var(--ink); cursor:pointer; }
+.family-actions .icon { width:16px; height:16px; color:var(--green); }
+.rooms-cap { font-size:11px; color:var(--ink-faint); padding:14px 4px 2px; }
+.room-mark { width:14px; height:14px; color:var(--green); vertical-align:-2px; margin-right:6px; }
+#family-pill { flex:none; border:1px solid #dfe5d6; border-radius:99px; padding:6px 12px; background:var(--green-tint); color:var(--green); font-size:11px; cursor:pointer; }
+.target-toggle { display:flex; gap:6px; padding:8px 16px 0; background:var(--surface); border-top:1px solid var(--line); }
+.target-toggle button { border:1px solid var(--line); border-radius:99px; background:var(--surface); padding:6px 14px; font-size:12px; color:var(--ink-soft); cursor:pointer; }
+.target-toggle button.on { background:var(--green); border-color:var(--green); color:#fffefa; font-weight:600; }
+.target-toggle~.input-bar { border-top:0; }
+.reads-cap { font-size:11px; color:var(--ink-faint); padding-left:2px; margin-top:-8px; }
+#family-members { display:flex; flex-wrap:wrap; gap:8px; margin:8px 0 16px; }
+.member-chip { border:1px solid var(--line); border-radius:99px; padding:7px 14px; font-size:13px; color:var(--ink); background:var(--bg); }
+.member-chip.me { border-color:var(--green); color:var(--green); }
+#family-name,#family-code { width:100%; border:1px solid var(--line); border-radius:12px; padding:12px 16px; font-size:17px; color:var(--ink); background:var(--bg); margin:8px 0 12px; }
+#family-create-form label,#family-join-form label { display:block; font-size:13px; color:var(--ink-soft); margin-top:8px; }
+#family-code-out { display:block; text-align:center; font-size:32px; letter-spacing:.16em; font-weight:600; padding:20px 0 4px; color:var(--green); }
+.name-row { display:flex; align-items:center; gap:12px; font-size:14px; color:var(--ink); margin:8px 0 14px; }
+.name-row input { flex:1; border:1px solid var(--line); border-radius:12px; padding:10px 14px; font-size:15px; color:var(--ink); background:var(--bg); min-width:0; }
+#family-share { margin-top:10px; }
+#family-leave { margin-top:8px; color:#9c4f42; }
+#first-name { width:100%; border:1px solid var(--line); border-radius:12px; padding:14px 16px; font-size:17px; color:var(--ink); background:var(--bg); margin:8px 0 12px; }

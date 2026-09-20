@@ -36,10 +36,14 @@
     <h1><svg class="icon family-mark" aria-hidden="true"><use href="#i-heart"/></svg>곁에 <span class="count">나의 대화</span></h1>
     <button class="icon-btn" id="open-settings" aria-label="내 안내 설정"><svg class="icon"><use href="#i-settings"/></svg></button>
   </header>
-  <div class="room-bar"><span id="room-title">나의 대화</span><button id="mode-pill">쉽게 듣기</button></div>
+  <div class="room-bar"><span id="room-title">나의 대화</span><button id="family-pill" hidden>우리 가족</button><button id="mode-pill">쉽게 듣기</button></div>
   <div id="connection" role="status" hidden></div>
   <main class="chat" id="chat" aria-label="대화 내용"></main>
   <div id="attachment-preview" hidden><img alt="보낼 사진"><span>사진을 함께 보낼게요</span><button id="remove-attachment" aria-label="사진 첨부 취소">×</button></div>
+  <div class="target-toggle" id="target" hidden role="group" aria-label="받는 사람">
+    <button type="button" class="on" data-kind="ask">곁에에게 묻기</button>
+    <button type="button" data-kind="note">가족에게 말하기</button>
+  </div>
   <form class="input-bar" id="composer">
     <button class="icon-btn" type="button" id="attach" aria-label="사진 첨부"><svg class="icon"><use href="#i-camera"/></svg></button>
     <textarea id="message" rows="1" maxlength="6000" placeholder="무엇을 도와드릴까요?" aria-label="메시지"></textarea>
@@ -49,6 +53,7 @@
 </div>
 <dialog class="panel" id="settings">
   <div class="panel-head"><h2>나에게 맞게</h2><button class="icon-btn" data-close aria-label="설정 닫기">×</button></div>
+  <label class="name-row">내 이름<input id="name-input" maxlength="20" autocomplete="off" placeholder="가족에게 보일 이름"></label>
   <p class="sheet-desc">새로 받는 답변에 적용돼요.</p>
   <div class="option-group" id="modes">
     <label class="option"><input type="radio" name="mode" value="easy"><span class="option-body"><b>쉽게 알려주세요</b><small>큰 글씨로, 꼭 필요한 것만</small></span></label>
@@ -62,7 +67,46 @@
 <dialog class="panel" id="rooms-panel">
   <div class="panel-head"><h2>나눈 이야기</h2><button class="icon-btn" data-close aria-label="대화 목록 닫기">×</button></div>
   <button class="chip primary block" id="new-room">새로운 이야기 시작하기</button>
+  <div class="family-actions">
+    <button id="new-family"><svg class="icon"><use href="#i-heart"/></svg>가족방 만들기</button>
+    <button id="join-family"><svg class="icon"><use href="#i-letter"/></svg>초대 코드로 참여</button>
+  </div>
   <div id="rooms-list"></div>
+</dialog>
+<dialog class="panel" id="family-panel">
+  <div class="panel-head"><h2 id="family-title">우리 가족</h2><button class="icon-btn" data-close aria-label="가족방 닫기">×</button></div>
+  <div id="family-create" hidden>
+    <p class="sheet-desc">가족이 함께 쓰는 방이에요. 한 사람이 물으면 모두가 각자 자기 방식대로 답을 봐요.</p>
+    <form id="family-create-form">
+      <label for="family-name">가족방 이름</label>
+      <input id="family-name" maxlength="30" placeholder="우리 가족" autocomplete="off">
+      <button class="chip primary block" type="submit">가족방 만들기</button>
+    </form>
+  </div>
+  <div id="family-join" hidden>
+    <p class="sheet-desc">가족에게 전달받은 8자리 초대 코드를 입력해 주세요.</p>
+    <form id="family-join-form">
+      <label for="family-code">초대 코드</label>
+      <input id="family-code" inputmode="numeric" pattern="[0-9]{8}" maxlength="8" placeholder="8자리 숫자" autocomplete="off" required>
+      <button class="chip primary block" type="submit">가족방 들어가기</button>
+    </form>
+  </div>
+  <div id="family-info" hidden>
+    <div id="family-members"></div>
+    <button class="chip primary block" id="family-invite">초대 코드 만들기</button>
+    <output id="family-code-out" hidden></output>
+    <button class="chip ghost block" id="family-share" hidden>카톡·문자로 초대장 보내기</button>
+    <p class="device-hint">가족에게 곁에 주소와 초대 코드를 알려 주세요. 코드는 10분 동안 한 번 쓸 수 있어요. 함께 쓸 수 있는 인원은 6명까지예요.</p>
+    <button class="setting-row" id="family-leave">이 방 나가기 <span>›</span></button>
+  </div>
+</dialog>
+<dialog class="panel" id="name-panel">
+  <div class="panel-head"><h2>어떻게 불러드릴까요?</h2><button class="icon-btn" data-close aria-label="이름 설정 닫기">×</button></div>
+  <p class="sheet-desc">가족방에서 이 이름으로 보여요. 설정에서 언제든 바꿀 수 있어요.</p>
+  <form id="name-form">
+    <input id="first-name" maxlength="20" placeholder="이름이나 호칭 (예: 지은, 엄마)" autocomplete="off" required>
+    <button class="chip primary block" type="submit">곁에 시작하기</button>
+  </form>
 </dialog>
 <dialog class="panel" id="device-panel">
   <div class="panel-head"><h2>대화 이어보기</h2><button class="icon-btn" data-close aria-label="기기 연결 닫기">×</button></div>

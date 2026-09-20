@@ -66,17 +66,28 @@ export class ChatStore extends DurableObject {
       CREATE TABLE IF NOT EXISTS attempts(uid TEXT NOT NULL,created REAL NOT NULL);
       CREATE TABLE IF NOT EXISTS pairing(code TEXT PRIMARY KEY,uid TEXT NOT NULL,expires REAL NOT NULL);
       CREATE TABLE IF NOT EXISTS limits(key TEXT PRIMARY KEY,start REAL NOT NULL,count INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS groups(id TEXT PRIMARY KEY,title TEXT NOT NULL,created REAL NOT NULL);
+      CREATE TABLE IF NOT EXISTS members(gid TEXT NOT NULL,uid TEXT NOT NULL,role TEXT NOT NULL,joined REAL NOT NULL,PRIMARY KEY(gid,uid));
+      CREATE TABLE IF NOT EXISTS invites(code TEXT PRIMARY KEY,gid TEXT NOT NULL,expires REAL NOT NULL);
+      CREATE TABLE IF NOT EXISTS reads(turn TEXT NOT NULL,uid TEXT NOT NULL,created REAL NOT NULL,PRIMARY KEY(turn,uid));
       CREATE INDEX IF NOT EXISTS room_turns ON turns(room,created);
       CREATE INDEX IF NOT EXISTS daily_attempts ON attempts(created);
     `);
+    if(!this.rows("SELECT name FROM pragma_table_info('rooms')").some(c=>c.name==='gid'))this.run('ALTER TABLE rooms ADD COLUMN gid TEXT');
+    if(!this.rows("SELECT name FROM pragma_table_info('turns')").some(c=>c.name==='kind'))this.run("ALTER TABLE turns ADD COLUMN kind TEXT NOT NULL DEFAULT 'ask'");
   }
   rows(q,...p){return this.sql.exec(q,...p).toArray();}
   one(q,...p){return this.rows(q,...p)[0];}
   run(q,...p){this.sql.exec(q,...p);}
   limit(key,cap,window){const t=now(),r=this.one('SELECT * FROM limits WHERE key=?',key);need(!r||r.start<t-window||r.count<cap,429,'요청이 많아요. 잠시 뒤 다시 시도해 주세요.');if(!r||r.start<t-window)this.run('INSERT OR REPLACE INTO limits VALUES(?,?,1)',key,t);else this.run('UPDATE limits SET count=count+1 WHERE key=?',key);}
-  room(id,uid){need(this.one('SELECT id FROM rooms WHERE id=? AND uid=?',id,uid),404,'대화를 찾지 못했어요.');}
-  turn(id,uid){const r=this.one('SELECT * FROM turns WHERE id=? AND uid=?',id,uid);need(r,404,'메시지를 찾지 못했어요.');return r;}
-  view(row){const {image,fingerprint,uid,usage,started,...r}=row;return {...r,has_image:!!image,answer:r.answer?JSON.parse(r.answer):null};}
+  member(gid,uid){need(this.one('SELECT gid FROM members WHERE gid=? AND uid=?',gid,uid),404,'가족방을 찾지 못했어요.');}
+  room(id,uid){
+    const r=this.one('SELECT * FROM rooms WHERE id=?',id);
+    need(r&&(r.uid===uid||(r.gid&&this.one('SELECT gid FROM members WHERE gid=? AND uid=?',r.gid,uid))),404,'대화를 찾지 못했어요.');
+    return r;
+  }
+  turn(id,uid){const t=this.one('SELECT * FROM turns WHERE id=?',id);need(t,404,'메시지를 찾지 못했어요.');this.room(t.room,uid);return t;}
+  view(row,uid){const {image,fingerprint,usage,started,...r}=row;const mine=row.uid===uid;delete r.uid;return {...r,mine,has_image:!!image,answer:r.answer?JSON.parse(r.answer):null};}
   async sessionHeader(uid,request){
     const token=random()+random();const h=await hash(token);
     this.run('INSERT INTO sessions VALUES(?,?,?)',h,uid,now()+90*86400);
@@ -107,7 +118,7 @@ export class ChatStore extends DurableObject {
         need(secureEqual(b.access_code,this.env.ACCESS_CODE),401,'처음 연결할 때는 접속 코드가 필요해요.');
         this.limit('signup:'+ip,12,3600);uid=random();
         this.run("INSERT INTO users VALUES(?,'나','easy')",uid);
-        this.run('INSERT INTO rooms VALUES(?,?,?,?)',random(),uid,'첫 대화',now());
+        this.run('INSERT INTO rooms(id,uid,title,created) VALUES(?,?,?,?)',random(),uid,'첫 대화',now());
         headers={'Set-Cookie':await this.sessionHeader(uid,request)};
       }
       return json({profile:this.one('SELECT name,mode FROM users WHERE id=?',uid),ai_ready:!!this.env.ANTHROPIC_API_KEY,access_code:null},200,headers);
@@ -118,41 +129,108 @@ export class ChatStore extends DurableObject {
       this.run('UPDATE users SET name=?,mode=? WHERE id=?',b.name.trim(),b.mode,uid);return json({name:b.name.trim(),mode:b.mode});
     }
     if(path==='/api/rooms'){
-      if(method==='GET')return json(this.rows('SELECT id,title,created FROM rooms WHERE uid=? ORDER BY created DESC',uid));
-      if(method==='POST'){this.limit('room:'+uid,20,3600);const id=random();this.run('INSERT INTO rooms VALUES(?,?,?,?)',id,uid,'새 대화',now());return json({id,title:'새 대화'});}
+      if(method==='GET'){
+        const family=this.rows('SELECT r.id,r.title,r.created,r.gid FROM rooms r JOIN members m ON m.gid=r.gid WHERE m.uid=? ORDER BY r.created DESC',uid);
+        const mine=this.rows('SELECT id,title,created,NULL AS gid FROM rooms WHERE uid=? AND gid IS NULL ORDER BY created DESC',uid);
+        return json([...family,...mine]);
+      }
+      if(method==='POST'){this.limit('room:'+uid,20,3600);const id=random();this.run('INSERT INTO rooms(id,uid,title,created) VALUES(?,?,?,?)',id,uid,'새 대화',now());return json({id,title:'새 대화'});}
+    }
+    if(path==='/api/groups'){
+      if(method==='GET')return json(this.rows('SELECT g.id,g.title,g.created FROM groups g JOIN members m ON m.gid=g.id WHERE m.uid=? ORDER BY g.created',uid).map(g=>({
+        ...g,room:this.one('SELECT id FROM rooms WHERE gid=?',g.id)?.id,
+        members:this.rows('SELECT u.name,m.role,m.uid=? AS me FROM members m JOIN users u ON u.id=m.uid WHERE m.gid=? ORDER BY m.joined',uid,g.id).map(m=>({name:m.name,role:m.role,me:!!m.me})),
+      })));
+      if(method==='POST'){
+        this.limit('group:'+uid,5,86400);
+        need(b.title===undefined||short(b.title,30),422,'가족방 이름을 확인해 주세요.');
+        const gid=random(),roomId=random(),title=(b.title||'').trim()||'우리 가족';
+        this.run('INSERT INTO groups VALUES(?,?,?)',gid,title,now());
+        this.run("INSERT INTO members VALUES(?,?,'admin',?)",gid,uid,now());
+        this.run('INSERT INTO rooms(id,uid,title,created,gid) VALUES(?,?,?,?,?)',roomId,uid,title,now(),gid);
+        return json({id:gid,title,room:roomId});
+      }
+    }
+    const inviteMatch=path.match(/^\/api\/groups\/([a-zA-Z0-9-]+)\/invite$/);
+    if(inviteMatch&&method==='POST'){
+      this.member(inviteMatch[1],uid);this.limit('invite:'+uid,10,3600);
+      const code=Array.from(crypto.getRandomValues(new Uint8Array(8)),n=>String(n%10)).join('');
+      this.run('DELETE FROM invites WHERE expires<?',now());
+      this.run('INSERT OR REPLACE INTO invites VALUES(?,?,?)',await hash(code),inviteMatch[1],now()+600);
+      return json({code,expires_in:600});
+    }
+    const leaveMatch=path.match(/^\/api\/groups\/([a-zA-Z0-9-]+)\/leave$/);
+    if(leaveMatch&&method==='POST'){
+      const gid=leaveMatch[1];this.member(gid,uid);
+      this.run('DELETE FROM members WHERE gid=? AND uid=?',gid,uid);
+      if(!this.one('SELECT uid FROM members WHERE gid=?',gid)){
+        const emptyRoom=this.one('SELECT id FROM rooms WHERE gid=?',gid)?.id;
+        if(emptyRoom){
+          this.run('DELETE FROM reads WHERE turn IN (SELECT id FROM turns WHERE room=?)',emptyRoom);
+          this.run('DELETE FROM turns WHERE room=?',emptyRoom);
+          this.run('DELETE FROM rooms WHERE id=?',emptyRoom);
+        }
+        this.run('DELETE FROM invites WHERE gid=?',gid);
+        this.run('DELETE FROM groups WHERE id=?',gid);
+      }
+      return json({ok:true});
+    }
+    if(path==='/api/groups/join'&&method==='POST'){
+      need(/^\d{8}$/.test(b.code||''),422,'8자리 초대 코드를 입력해 주세요.');this.limit('join:'+ip,10,600);
+      const h=await hash(b.code),invite=this.one('SELECT * FROM invites WHERE code=? AND expires>?',h,now());
+      need(invite,400,'초대 코드를 확인해 주세요. 10분 동안 한 번 쓸 수 있어요.');
+      this.run('DELETE FROM invites WHERE code=?',h);
+      if(!this.one('SELECT gid FROM members WHERE gid=? AND uid=?',invite.gid,uid)){
+        need(this.one('SELECT COUNT(*) AS n FROM members WHERE gid=?',invite.gid).n<6,409,'가족방 인원이 가득 찼어요.');
+        this.run("INSERT INTO members VALUES(?,?,'member',?)",invite.gid,uid,now());
+      }
+      const g=this.one('SELECT * FROM groups WHERE id=?',invite.gid);
+      return json({id:g.id,title:g.title,room:this.one('SELECT id FROM rooms WHERE gid=?',g.id)?.id});
     }
     const roomMatch=path.match(/^\/api\/rooms\/([a-zA-Z0-9-]+)\/turns$/);
     if(roomMatch){
-      const room=roomMatch[1];this.room(room,uid);
-      if(method==='GET')return json(this.rows('SELECT * FROM (SELECT * FROM turns WHERE room=? ORDER BY created DESC LIMIT 200) ORDER BY created',room).map(r=>this.view(r)));
+      const room=roomMatch[1],r=this.room(room,uid);
+      if(method==='GET'){
+        const list=this.rows('SELECT * FROM (SELECT t.*,u.name AS sender FROM turns t JOIN users u ON u.id=t.uid WHERE t.room=? ORDER BY t.created DESC LIMIT 200) ORDER BY created',room).map(t=>this.view(t,uid));
+        if(r.gid){
+          const reads=this.rows('SELECT rd.turn,u.name,rd.uid FROM reads rd JOIN users u ON u.id=rd.uid JOIN turns t ON t.id=rd.turn WHERE t.room=? ORDER BY rd.created',room);
+          for(const t of list){t.reads=reads.filter(x=>x.turn===t.id).map(x=>x.name);t.my_read=t.mine||reads.some(x=>x.turn===t.id&&x.uid===uid);}
+        }
+        return json(list);
+      }
       if(method==='POST'){
         need(short(b.request_id,80)&&/^[a-zA-Z0-9-]{16,80}$/.test(b.request_id)&&short(b.text??'',6000),422,'입력 내용을 확인해 주세요.');
-        const text=(b.text||'').trim();need(text||b.image,422,'문장이나 사진을 보내 주세요.');
-        const bytes=imageBytes(b), fingerprint=await hash(JSON.stringify([room,text,b.image_type||null,b.image||null]));
+        const note=b.kind==='note';need(!note||r.gid,422,'가족방에서만 가족에게 말을 남길 수 있어요.');
+        const text=(b.text||'').trim();need(text||(!note&&b.image),422,note?'가족에게 남길 문장을 적어 주세요.':'문장이나 사진을 보내 주세요.');
+        const bytes=note?null:imageBytes(b), fingerprint=await hash(JSON.stringify([room,b.kind||'ask',text,b.image_type||null,b.image||null]));
         const exists=this.one('SELECT * FROM turns WHERE id=?',b.request_id);
-        if(exists){need(exists.uid===uid&&exists.fingerprint===fingerprint,409,'요청 식별자가 다른 메시지와 겹쳤어요.');return json(this.view(exists),202);}
+        if(exists){need(exists.uid===uid&&exists.fingerprint===fingerprint,409,'요청 식별자가 다른 메시지와 겹쳤어요.');return json(this.view(exists,uid),202);}
         this.ctx.storage.transactionSync(()=>{
-          this.reserve(uid);
-          const mode=this.one('SELECT mode FROM users WHERE id=?',uid).mode;
-          this.run('INSERT INTO turns(id,uid,room,fingerprint,text,image,image_type,mode,status,created) VALUES(?,?,?,?,?,?,?,?,?,?)',b.request_id,uid,room,fingerprint,text,bytes?.buffer||null,b.image_type||null,mode,'pending',now());
-          this.run("UPDATE rooms SET title=? WHERE id=? AND title IN ('새 대화','첫 대화')",(text||'사진에 대해 물어봤어요').slice(0,26),room);
+          if(note)this.limit('note:'+uid,120,3600);else this.reserve(uid);
+          const mode=r.gid?'full':this.one('SELECT mode FROM users WHERE id=?',uid).mode;
+          this.run('INSERT INTO turns(id,uid,room,fingerprint,text,image,image_type,mode,status,created,kind) VALUES(?,?,?,?,?,?,?,?,?,?,?)',b.request_id,uid,room,fingerprint,text,bytes?.buffer||null,note?null:b.image_type||null,mode,note?'done':'pending',now(),note?'note':'ask');
+          if(!r.gid)this.run("UPDATE rooms SET title=? WHERE id=? AND title IN ('새 대화','첫 대화')",(text||'사진에 대해 물어봤어요').slice(0,26),room);
         });
-        await this.schedule();return json(this.view(this.turn(b.request_id,uid)),202);
+        if(!note)await this.schedule();return json(this.view(this.turn(b.request_id,uid),uid),202);
       }
     }
-    const turnMatch=path.match(/^\/api\/turns\/([a-zA-Z0-9-]+)(?:\/(image|retry|progress))?$/);
+    const turnMatch=path.match(/^\/api\/turns\/([a-zA-Z0-9-]+)(?:\/(image|retry|progress|read))?$/);
     if(turnMatch){
       const id=turnMatch[1],action=turnMatch[2],t=this.turn(id,uid);
-      if(method==='GET'&&!action)return json(this.view(t));
+      if(method==='GET'&&!action)return json(this.view(t,uid));
       if(method==='GET'&&action==='image'){need(t.image,404,'사진이 없어요.');return new Response(t.image,{headers:{'Content-Type':t.image_type,'Cache-Control':'no-store'}});}
+      if(method==='POST'&&action==='read'){
+        need(this.one('SELECT gid FROM rooms WHERE id=?',t.room)?.gid,422,'가족방에서만 읽음을 표시해요.');
+        this.run('INSERT OR IGNORE INTO reads VALUES(?,?,?)',id,uid,now());return json({ok:true});
+      }
       if(method==='PUT'&&action==='progress'){
         need(t.answer&&Number.isInteger(b.completed)&&b.completed>=0&&b.completed<=JSON.parse(t.answer).steps.length,422,'단계를 확인해 주세요.');
         const n=Math.max(t.completed,b.completed);this.run('UPDATE turns SET completed=? WHERE id=?',n,id);return json({completed:n});
       }
       if(method==='POST'&&action==='retry'){
-        if(t.status!=='failed')return json(this.view(t),202);
+        if(t.status!=='failed')return json(this.view(t,uid),202);
         this.ctx.storage.transactionSync(()=>{this.reserve(uid);this.run("UPDATE turns SET status='pending',error=NULL,started=NULL WHERE id=?",id);});
-        await this.schedule();return json(this.view(this.turn(id,uid)),202);
+        await this.schedule();return json(this.view(this.turn(id,uid),uid),202);
       }
     }
     if(path==='/api/pairing'&&method==='POST'){
@@ -179,7 +257,7 @@ export class ChatStore extends DurableObject {
     this.run('UPDATE turns SET started=? WHERE id=?',now(),t.id);
     await this.ctx.storage.setAlarm(Date.now()+90000);
     try{
-      const previous=this.rows("SELECT text,answer FROM turns WHERE room=? AND status='done' AND created<? ORDER BY created DESC LIMIT 8",t.room,t.created).reverse();
+      const previous=this.rows("SELECT text,answer FROM turns WHERE room=? AND status='done' AND answer IS NOT NULL AND created<? ORDER BY created DESC LIMIT 8",t.room,t.created).reverse();
       const messages=previous.flatMap(r=>[{role:'user',content:r.text.slice(0,4000)||'이전 사진에 대해 질문했어요.'},{role:'assistant',content:r.answer.slice(0,6000)}]);
       const content=[];
       if(t.image)content.push({type:'image',source:{type:'base64',media_type:t.image_type,data:toBase64(new Uint8Array(t.image))}});
