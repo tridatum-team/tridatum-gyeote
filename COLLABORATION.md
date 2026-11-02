@@ -1,6 +1,6 @@
 # 공동작업 안내
 
-저장소: https://github.com/Gyuhyeon-Eom/gyuttae
+저장소: https://github.com/tridatum-team/gyuttae
 
 ## 실행과 구성
 
