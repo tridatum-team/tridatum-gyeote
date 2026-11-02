@@ -103,8 +103,8 @@ Google OAuth 자격 증명 연결, 대화 삭제·보관 정책, 앱을 닫았�
 ## 저장소에서 시작하기
 
 ```sh
-git clone https://github.com/Gyuhyeon-Eom/gyuttae.git
-cd gyuttae
+git clone https://github.com/tridatum-team/tridatum-gyeote.git
+cd tridatum-gyeote
 ```
 
 비밀값, SQLite DB, 실행 로그와 실제 호출 결과 JSON은 Git에 포함하지 않습니다.
