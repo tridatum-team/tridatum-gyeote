@@ -113,8 +113,8 @@ FastAPI 로컬 버전은 `실행.command` 또는 다음 명령을 사용합니�
 ## 저장소에서 시작하기
 
 ```sh
-git clone https://github.com/Gyuhyeon-Eom/gyuttae.git
-cd gyuttae
+git clone https://github.com/tridatum-team/tridatum-gyeote.git
+cd tridatum-gyeote
 ```
 
 비밀값, SQLite DB, 실행 로그와 실제 호출 결과 JSON은 Git에 포함하지 않습니다.
